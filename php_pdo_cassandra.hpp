@@ -20,6 +20,9 @@
 #define PHP_PDO_CASSANDRA_EXTNAME "pdo_cassandra"
 #define PHP_PDO_CASSANDRA_EXTVER "@PACKAGE_VERSION@"
 
+/* Nb of times the driver will execute the query before dropping it */
+#define PHP_PDO_CASSANDRA_MAX_RETRY 3
+
 extern "C" {
 #ifdef ZTS
 # include "TSRM.h"

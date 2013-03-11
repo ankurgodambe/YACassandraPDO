@@ -84,6 +84,56 @@ static void pdo_cassandra_stmt_undescribe(pdo_stmt_t *stmt TSRMLS_DC)
 }
 /* }}} */
 
+/**
+   try {
+-        if (!H->transport->isOpen()) {
+-            H->transport->open();
+-        }
+         std::string query(stmt->active_query_string);
+
+-        S->result.reset(new CqlResult);
+-        H->client->execute_cql3_query(*S->result.get(), query, (H->compression ? Compression::GZIP : Compression::NONE), H->consistency);
+-        S->has_iterator = 0;
+-        stmt->row_count = S->result.get()->rows.size();
+         pdo_cassandra_set_active_keyspace(H, query TSRMLS_CC);
+         pdo_cassandra_set_active_columnfamily(H, query TSRMLS_CC);
++        return _pdo_cassandra_stmt_execute(S, stmt, H, query);
+
+-        // Undescribe the result set because next time there might be different amount of columns
+-        pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
+-        return 1;
+
+ **/
+static int _pdo_cassandra_stmt_execute(pdo_cassandra_stmt *statement, pdo_stmt_t *stmt, pdo_cassandra_db_handle *handle,
+                                       const std::string &query, int retry = PHP_PDO_CASSANDRA_MAX_RETRY) {
+
+    //    try {
+    if (!handle->transport->isOpen()) {
+        handle->transport->open();
+
+        statement->result.reset(new CqlResult);
+        handle->client->execute_cql3_query(*statement->result.get(), query,
+                                           (handle->compression ? Compression::GZIP : Compression::NONE),
+                                           handle->consistency);
+        statement->has_iterator = 0;
+        stmt->row_count = statement->result.get()->rows.size();
+        // Undescribe the result set because next time there might be different amount of columns
+        pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
+
+    }
+    // }
+    // catch (TTransportException &e) {
+    //     pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what());
+    // } catch (TException &e) {
+    //     pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
+    // } catch (std::exception &e) {
+    //     pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
+    // } catch (NotFoundException &e) {
+    //     pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_NOT_FOUND, "%s", e.what());
+    // }
+    return 1;
+}
+
 /** {{{ static int pdo_cassandra_stmt_execute(pdo_stmt_t *stmt TSRMLS_DC)
 */
 static int pdo_cassandra_stmt_execute(pdo_stmt_t *stmt TSRMLS_DC)
@@ -92,21 +142,18 @@ static int pdo_cassandra_stmt_execute(pdo_stmt_t *stmt TSRMLS_DC)
     pdo_cassandra_db_handle *H = static_cast <pdo_cassandra_db_handle *>(S->H);
 
     try {
-        if (!H->transport->isOpen()) {
-            H->transport->open();
-        }
         std::string query(stmt->active_query_string);
 
-        S->result.reset(new CqlResult);
-        H->client->execute_cql3_query(*S->result.get(), query, (H->compression ? Compression::GZIP : Compression::NONE), H->consistency);
-        S->has_iterator = 0;
-        stmt->row_count = S->result.get()->rows.size();
         pdo_cassandra_set_active_keyspace(H, query TSRMLS_CC);
         pdo_cassandra_set_active_columnfamily(H, query TSRMLS_CC);
+        return _pdo_cassandra_stmt_execute(S, stmt, H, query);
 
-        // Undescribe the result set because next time there might be different amount of columns
-        pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
-        return 1;
+    } catch (TTransportException &e) {
+        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what());
+    } catch (TException &e) {
+        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
+    } catch (std::exception &e) {
+        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
     } catch (NotFoundException &e) {
         pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_NOT_FOUND, "%s", e.what());
     } catch (InvalidRequestException &e) {
@@ -121,12 +168,6 @@ static int pdo_cassandra_stmt_execute(pdo_stmt_t *stmt TSRMLS_DC)
         pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_AUTHORIZATION_ERROR, "%s", e.why.c_str());
     } catch (SchemaDisagreementException &e) {
         pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_SCHEMA_DISAGREEMENT, "%s", e.what());
-    } catch (TTransportException &e) {
-        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what());
-    } catch (TException &e) {
-        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
-    } catch (std::exception &e) {
-        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
     }
     return 0;
 }
