@@ -94,7 +94,7 @@ typedef struct {
 
 /* {{{ typedef struct php_cassandra_db_handle
 */
-typedef struct {
+struct pdo_cassandra_db_handle {
     zend_object                         zo;
     zend_bool                           compression;
     boost::shared_ptr<TSocketPool>      socket;
@@ -110,7 +110,14 @@ typedef struct {
     zend_bool                           preserve_values;
     ConsistencyLevel::type              consistency;
     int                                 timeout;                /* Global timeout for a request */
-} pdo_cassandra_db_handle;
+
+    pdo_cassandra_db_handle()
+        : timeout(100) {
+    }
+
+};
+
+
 /* }}} */
 
 typedef boost::bimap<std::string, int> ColumnMap;

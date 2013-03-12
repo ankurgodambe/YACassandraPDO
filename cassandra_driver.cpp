@@ -235,12 +235,53 @@ static void php_cassandra_handle_auth(pdo_dbh_t *dbh, pdo_cassandra_db_handle *H
 }
 /* }}} */
 
+#define MY_ERROR_TREATMENT(message)             \
+    if (!retry)                                 \
+        message;                                \
+    else                                        \
+        initialize_connection(H, dbh, retry - 1)
+
+static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh, int retry = PHP_PDO_CASSANDRA_MAX_RETRY)
+{
+    try {
+        H->transport->open();
+        php_cassandra_handle_auth (dbh, H);
+        if ( ! H->active_keyspace.empty() ) {
+            H->client->set_keyspace(H->active_keyspace);
+        }
+        if ( ! H->cql_version.empty() ) {
+            H->client->set_cql_version(H->cql_version);
+        }
+        return;
+    } catch (NotFoundException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_NOT_FOUND, "%s", e.what()));
+    } catch (InvalidRequestException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_INVALID_REQUEST, "%s", e.why.c_str()));
+    } catch (UnavailableException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_UNAVAILABLE, "%s", e.what()));
+    } catch (TimedOutException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TIMED_OUT, "%s", e.what()));
+    } catch (AuthenticationException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_AUTHENTICATION_ERROR, "%s", e.why.c_str()));
+    } catch (AuthorizationException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_AUTHORIZATION_ERROR, "%s", e.why.c_str()));
+    } catch (SchemaDisagreementException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_SCHEMA_DISAGREEMENT, "%s", e.what()));
+    } catch (TTransportException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what()));
+    } catch (TException &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what()));
+    } catch (std::exception &e) {
+        MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what()));
+    }
+}
+
+#undef MY_ERROR_TREATMENT
 /** {{{ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSRMLS_DC)
 */
 static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSRMLS_DC)
 {
     pdo_cassandra_db_handle *H = new pdo_cassandra_db_handle;
-
     dbh->driver_data   = NULL;
     dbh->methods       = &cassandra_methods;
     H->consistency     = ConsistencyLevel::ONE;
@@ -257,8 +298,6 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
     dbh->driver_data = H;
 
     if (driver_options) {
-        // Copy timeout attribute in the handle structure
-        H->timeout = pdo_attr_lval(driver_options, PDO_ATTR_TIMEOUT, H->timeout TSRMLS_CC);
         if (pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_ATTR_THRIFT_DEBUG), 0 TSRMLS_CC)) {
             // Convert thift messages to php warnings
             pdo_cassandra_toggle_thrift_debug(1);
@@ -271,7 +310,6 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
             H->preserve_values = 1;
         }
     }
-
     /* Break down the values */
     zend_bool rc = 0;
     if (dbh->data_source_len > 0) {
@@ -283,42 +321,10 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
         pdo_cassandra_handle_close(dbh TSRMLS_CC);
         return 0;
     }
-
-    try {
-        H->transport->open();
-
-        php_cassandra_handle_auth (dbh, H);
-
-        if ( ! H->active_keyspace.empty() ) {
-            H->client->set_keyspace(H->active_keyspace);
-        }
-
-        if ( ! H->cql_version.empty() ) {
-            H->client->set_cql_version(H->cql_version);
-        }
-
-        return 1;
-    } catch (NotFoundException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_NOT_FOUND, "%s", e.what());
-    } catch (InvalidRequestException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_INVALID_REQUEST, "%s", e.why.c_str());
-    } catch (UnavailableException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_UNAVAILABLE, "%s", e.what());
-    } catch (TimedOutException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TIMED_OUT, "%s", e.what());
-    } catch (AuthenticationException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_AUTHENTICATION_ERROR, "%s", e.why.c_str());
-    } catch (AuthorizationException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_AUTHORIZATION_ERROR, "%s", e.why.c_str());
-    } catch (SchemaDisagreementException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_SCHEMA_DISAGREEMENT, "%s", e.what());
-    } catch (TTransportException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what());
-    } catch (TException &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
-    } catch (std::exception &e) {
-        pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what());
-    }
+    H->socket->setConnTimeout(H->timeout);
+    H->socket->setSendTimeout(H->timeout);
+    H->socket->setRecvTimeout(H->timeout);
+    initialize_connection(H, dbh);
     return 0;
 }
 /* }}} */
@@ -345,9 +351,6 @@ static int pdo_cassandra_handle_prepare(pdo_dbh_t *dbh, const char *sql, long sq
         if (consistency != -1) {
             pdo_cassandra_set_consistency(dbh, consistency);
         }
-        H->timeout = pdo_attr_lval(driver_options, PDO_ATTR_TIMEOUT, H->timeout TSRMLS_CC);
-        std::cout << "Up timeout: " <<  (H->timeout) << std::endl;
-
     }
 
     return 1;
@@ -431,6 +434,7 @@ static long pdo_cassandra_handle_execute(pdo_dbh_t *dbh, const char *sql, long s
     try {
         /* Verify and try to reconnect if necessary */
         if (!H->transport->isOpen()) {
+            H->socket->setConnTimeout(H->timeout);
             H->transport->open();
         }
 
