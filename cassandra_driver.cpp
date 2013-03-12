@@ -614,7 +614,6 @@ static int pdo_cassandra_handle_set_attribute(pdo_dbh_t *dbh, long attr, zval *v
         case PDO_CASSANDRA_TIMEOUT:
             convert_to_long(val);
             H->timeout = Z_LVAL_P(val);
-            std::cout << "TIMEOUT " << Z_LVAL_P(val) << std::endl;
         break;
 
         case PDO_CASSANDRA_ATTR_RECV_TIMEOUT:
