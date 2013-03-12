@@ -95,20 +95,21 @@ typedef struct {
 /* {{{ typedef struct php_cassandra_db_handle
 */
 typedef struct {
-    zend_object zo;
-    zend_bool compression;
-    boost::shared_ptr<TSocketPool> socket;
+    zend_object                         zo;
+    zend_bool                           compression;
+    boost::shared_ptr<TSocketPool>      socket;
     boost::shared_ptr<TFramedTransport> transport;
-    boost::shared_ptr<TProtocol> protocol;
-    boost::shared_ptr<CassandraClient> client;
-    pdo_cassandra_einfo einfo;
-    std::string active_keyspace;
-    std::string active_columnfamily;
-    std::string cql_version;
-    KsDef description;
-    zend_bool has_description;
-    zend_bool preserve_values;
-    ConsistencyLevel::type consistency;
+    boost::shared_ptr<TProtocol>        protocol;
+    boost::shared_ptr<CassandraClient>  client;
+    pdo_cassandra_einfo                 einfo;
+    std::string                         active_keyspace;
+    std::string                         active_columnfamily;
+    std::string                         cql_version;
+    KsDef                               description;
+    zend_bool                           has_description;
+    zend_bool                           preserve_values;
+    ConsistencyLevel::type              consistency;
+    int                                 timeout;                /* Global timeout for a request */
 } pdo_cassandra_db_handle;
 /* }}} */
 
@@ -141,6 +142,7 @@ enum pdo_cassandra_constant {
     PDO_CASSANDRA_ATTR_CONN_TIMEOUT,
     PDO_CASSANDRA_ATTR_RECV_TIMEOUT,
     PDO_CASSANDRA_ATTR_SEND_TIMEOUT,
+    PDO_CASSANDRA_TIMEOUT,
     PDO_CASSANDRA_ATTR_COMPRESSION,
     PDO_CASSANDRA_ATTR_THRIFT_DEBUG,
     PDO_CASSANDRA_ATTR_PRESERVE_VALUES,

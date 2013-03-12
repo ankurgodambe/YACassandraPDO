@@ -1,5 +1,6 @@
 /*
- *  Copyright 2011 DataStax
+ *  Copyright 2013 France Telecom
+ *  Copyright 2011 - 2013 DataStax
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -13,6 +14,8 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "php_pdo_cassandra.hpp"
 #include "php_pdo_cassandra_int.hpp"
@@ -104,38 +107,62 @@ static void pdo_cassandra_stmt_undescribe(pdo_stmt_t *stmt TSRMLS_DC)
 
  **/
 
-#define MY_ERROR_TREATMENT  \
-    if (!retry)                                                         \
+#define MY_ERROR_TREATMENT                                              \
+    if (!retry) {                                                       \
+        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TIMED_OUT,         \
+                            "%s", e.what());                            \
         throw e;                                                        \
-    else                                                                \
+    }                                                                   \
+    else {                                                              \
+        pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TIMED_OUT,         \
+                            "%s", e.what());                            \
         return _pdo_cassandra_stmt_execute(statement, stmt,             \
-                                           handle, query, retry - 1)
+                                           handle, query, start_time,   \
+                                           retry - 1);                  \
+    }
+
+static inline int get_time_left(pdo_cassandra_db_handle *handle, const boost::posix_time::ptime &start_time)
+{
+    int left_ms = boost::posix_time::time_duration(boost::posix_time::microsec_clock::universal_time() - start_time).total_milliseconds();
+    return std::min(handle->timeout, left_ms);
+}
 
 static int _pdo_cassandra_stmt_execute(pdo_cassandra_stmt *statement, pdo_stmt_t *stmt, pdo_cassandra_db_handle *handle,
-                                       const std::string &query, int retry = PHP_PDO_CASSANDRA_MAX_RETRY) {
+                                       const std::string &query, boost::posix_time::ptime start_time,
+                                       int retry = PHP_PDO_CASSANDRA_MAX_RETRY) {
+    int tl;
     try {
         if (!handle->transport->isOpen()) {
+            if ((tl = get_time_left(handle, start_time)) < 0)
+                return 0;
+            handle->socket->setConnTimeout(tl);
             handle->transport->open();
         }
         statement->result.reset(new CqlResult);
-
-        handle->client->execute_cql3_query(*statement->result.get(), query,
-                                           (handle->compression ? Compression::GZIP : Compression::NONE),
-                                           handle->consistency);
-        statement->has_iterator = 0;
-        stmt->row_count = statement->result.get()->rows.size();
-        // Undescribe the result set because next time there might be different amount of columns
-        pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
-
+        if ((tl = get_time_left(handle, start_time)) >= 0) {
+            handle->socket->setSendTimeout(tl);
+            handle->client->execute_cql3_query(*statement->result.get(), query,
+                                               (handle->compression ? Compression::GZIP : Compression::NONE),
+                                               handle->consistency);
+            statement->has_iterator = 0;
+            if ((tl = get_time_left(handle, start_time)) < 0)
+                return 0;
+            handle->socket->setRecvTimeout(tl);
+            stmt->row_count = statement->result.get()->rows.size();
+            // Undescribe the result set because next time there might be different amount of columns
+            pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
+        } else
+            // Request has expired
+            return 0;
     }
     catch (TTransportException &e) {
-        MY_ERROR_TREATMENT;
+        MY_ERROR_TREATMENT
     } catch (NotFoundException &e) {
-        MY_ERROR_TREATMENT;
+        MY_ERROR_TREATMENT
     } catch (TException &e) {
-        MY_ERROR_TREATMENT;
+        MY_ERROR_TREATMENT
     } catch (std::exception &e) {
-        MY_ERROR_TREATMENT;
+        MY_ERROR_TREATMENT
     }
     return 1;
 }
@@ -148,14 +175,12 @@ static int pdo_cassandra_stmt_execute(pdo_stmt_t *stmt TSRMLS_DC)
 {
     pdo_cassandra_stmt *S = static_cast <pdo_cassandra_stmt *>(stmt->driver_data);
     pdo_cassandra_db_handle *H = static_cast <pdo_cassandra_db_handle *>(S->H);
-
+    //H->socket->setConnTimeout(timeout);
     try {
         std::string query(stmt->active_query_string);
         pdo_cassandra_set_active_keyspace(H, query TSRMLS_CC);
         pdo_cassandra_set_active_columnfamily(H, query TSRMLS_CC);
-
-        return _pdo_cassandra_stmt_execute(S, stmt, H, query);
-
+        return _pdo_cassandra_stmt_execute(S, stmt, H, query,  boost::posix_time::microsec_clock::universal_time() /*now*/);
     } catch (TTransportException &e) {
         pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TRANSPORT_ERROR, "%s", e.what());
     } catch (NotFoundException &e) {

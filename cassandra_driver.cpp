@@ -256,13 +256,9 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
     H->client.reset(new CassandraClient(H->protocol));
     dbh->driver_data = H;
 
-    /* set possible connection timeout */
-    long timeout = 0;
-
     if (driver_options) {
-        timeout = pdo_attr_lval(driver_options, PDO_ATTR_TIMEOUT, timeout TSRMLS_CC);
-        H->socket->setConnTimeout(timeout);
-
+        // Copy timeout attribute in the handle structure
+        H->timeout = pdo_attr_lval(driver_options, PDO_ATTR_TIMEOUT, H->timeout TSRMLS_CC);
         if (pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_ATTR_THRIFT_DEBUG), 0 TSRMLS_CC)) {
             // Convert thift messages to php warnings
             pdo_cassandra_toggle_thrift_debug(1);
@@ -349,6 +345,9 @@ static int pdo_cassandra_handle_prepare(pdo_dbh_t *dbh, const char *sql, long sq
         if (consistency != -1) {
             pdo_cassandra_set_consistency(dbh, consistency);
         }
+        H->timeout = pdo_attr_lval(driver_options, PDO_ATTR_TIMEOUT, H->timeout TSRMLS_CC);
+        std::cout << "Up timeout: " <<  (H->timeout) << std::endl;
+
     }
 
     return 1;
@@ -612,6 +611,12 @@ static int pdo_cassandra_handle_set_attribute(pdo_dbh_t *dbh, long attr, zval *v
             H->socket->setConnTimeout(Z_LVAL_P(val));
         break;
 
+        case PDO_CASSANDRA_TIMEOUT:
+            convert_to_long(val);
+            H->timeout = Z_LVAL_P(val);
+            std::cout << "TIMEOUT " << Z_LVAL_P(val) << std::endl;
+        break;
+
         case PDO_CASSANDRA_ATTR_RECV_TIMEOUT:
             convert_to_long(val);
             H->socket->setRecvTimeout(Z_LVAL_P(val));
@@ -753,6 +758,7 @@ PHP_MINIT_FUNCTION(pdo_cassandra)
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_LINGER",                   PDO_CASSANDRA_ATTR_LINGER);
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_NO_DELAY",                 PDO_CASSANDRA_ATTR_NO_DELAY);
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_CONN_TIMEOUT",             PDO_CASSANDRA_ATTR_CONN_TIMEOUT);
+    PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_TIMEOUT",                       PDO_CASSANDRA_TIMEOUT);
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_RECV_TIMEOUT",             PDO_CASSANDRA_ATTR_RECV_TIMEOUT);
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_SEND_TIMEOUT",             PDO_CASSANDRA_ATTR_SEND_TIMEOUT);
     PHP_PDO_CASSANDRA_REGISTER_CONST_LONG("CASSANDRA_ATTR_COMPRESSION",              PDO_CASSANDRA_ATTR_COMPRESSION);
