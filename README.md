@@ -16,6 +16,11 @@ We need some testers, so if you find BUGS or inconsistencies, feel free to repor
  - Fixed parameters binding
  - Some other minor fixes
 
+# Branches
+
+- 'master' branch is the driver derived from the datastax version.
+- 'retry' branch has been modified according to our needs. The main difference with the master version is that, in case of a connection or request failure we repeat the process untill we reach a maximun retry or a success appears
+
 # Dependencies
 
   - PHP and PDO
