@@ -242,7 +242,7 @@ static void php_cassandra_handle_auth(pdo_dbh_t *dbh, pdo_cassandra_db_handle *H
     if (!retry)                                 \
         message;                                \
     else                                        \
-        initialize_connection(H, dbh, start_time, retry - 1)
+        return initialize_connection(H, dbh, start_time, retry - 1)
 
 int get_time_left_on_handle(pdo_cassandra_db_handle *handle, const boost::posix_time::ptime &start_time)
 {
@@ -252,14 +252,16 @@ int get_time_left_on_handle(pdo_cassandra_db_handle *handle, const boost::posix_
     return handle->timeout - consummed_ms;
 }
 
-static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh,
+static int initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh,
                                   boost::posix_time::ptime start_time,
                                   int retry = PHP_PDO_CASSANDRA_MAX_RETRY)
 {
     int tl;
     try {
-        if ((tl = get_time_left_on_handle(H, start_time)) < 0)
+        if ((tl = get_time_left_on_handle(H, start_time)) < 0) {
             pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TIMED_OUT, "%s", "Connection could not be established in the imparted time");
+            return 0;
+        }
         H->socket->setConnTimeout(tl);
         H->socket->setSendTimeout(tl);
         H->socket->setRecvTimeout(tl);
@@ -272,7 +274,7 @@ static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh,
         if ( ! H->cql_version.empty() ) {
             H->client->set_cql_version(H->cql_version);
         }
-        return;
+        return 1;
     } catch (NotFoundException &e) {
         MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_NOT_FOUND, "%s", e.what()));
     } catch (InvalidRequestException &e) {
@@ -294,6 +296,7 @@ static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh,
     } catch (std::exception &e) {
         MY_ERROR_TREATMENT(pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_GENERAL_ERROR, "%s", e.what()));
     }
+    return 0;
 }
 
 #undef MY_ERROR_TREATMENT
@@ -318,7 +321,6 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
     dbh->driver_data = H;
 
     if (driver_options) {
-        std::cout << "Options set" << pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_TIMEOUT), 0 TSRMLS_CC) << std::endl;
         H->timeout = pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_TIMEOUT), 0 TSRMLS_CC);
         if (pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_ATTR_THRIFT_DEBUG), 0 TSRMLS_CC)) {
             // Convert thift messages to php warnings
@@ -343,8 +345,7 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
         pdo_cassandra_handle_close(dbh TSRMLS_CC);
         return 0;
     }
-    initialize_connection(H, dbh, boost::posix_time::microsec_clock::universal_time());
-    return 0;
+    return initialize_connection(H, dbh, boost::posix_time::microsec_clock::universal_time());
 }
 /* }}} */
 
@@ -559,7 +560,6 @@ static int pdo_cassandra_handle_quote(pdo_dbh_t *dbh, const char *unquoted, int 
 static int pdo_cassandra_handle_close(pdo_dbh_t *dbh TSRMLS_DC)
 {
     pdo_cassandra_db_handle *H = static_cast <pdo_cassandra_db_handle *>(dbh->driver_data);
-    std::cout << "Closing module" << std::endl;
     if (H) {
         pdo_cassandra_einfo *einfo = &H->einfo;
 
@@ -635,7 +635,6 @@ static int pdo_cassandra_handle_set_attribute(pdo_dbh_t *dbh, long attr, zval *v
         break;
 
         case PDO_CASSANDRA_TIMEOUT:
-            std::cout << "cassandra_timeout" << std::endl;
             convert_to_long(val);
             H->timeout = Z_LVAL_P(val);
         break;
