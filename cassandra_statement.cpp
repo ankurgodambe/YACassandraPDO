@@ -87,26 +87,6 @@ static void pdo_cassandra_stmt_undescribe(pdo_stmt_t *stmt TSRMLS_DC)
 }
 /* }}} */
 
-/**
-   try {
--        if (!H->transport->isOpen()) {
--            H->transport->open();
--        }
-         std::string query(stmt->active_query_string);
-
--        S->result.reset(new CqlResult);
--        H->client->execute_cql3_query(*S->result.get(), query, (H->compression ? Compression::GZIP : Compression::NONE), H->consistency);
--        S->has_iterator = 0;
--        stmt->row_count = S->result.get()->rows.size();
-         pdo_cassandra_set_active_keyspace(H, query TSRMLS_CC);
-         pdo_cassandra_set_active_columnfamily(H, query TSRMLS_CC);
-
--        // Undescribe the result set because next time there might be different amount of columns
--        pdo_cassandra_stmt_undescribe(stmt TSRMLS_CC);
--        return 1;
-
- **/
-
 #define MY_ERROR_TREATMENT                                              \
     if (!retry) {                                                       \
         pdo_cassandra_error(stmt->dbh, PDO_CASSANDRA_TIMED_OUT,         \
@@ -121,13 +101,6 @@ static void pdo_cassandra_stmt_undescribe(pdo_stmt_t *stmt TSRMLS_DC)
                                            retry - 1);                  \
     }
 
-static inline int get_time_left(pdo_cassandra_db_handle *handle, const boost::posix_time::ptime &start_time)
-{
-    int consummed_ms = boost::posix_time::time_duration(boost::posix_time::microsec_clock::universal_time() - start_time).total_milliseconds();
-    std::cout << "Consummed: " << consummed_ms << " | handle timeout:" << handle->timeout << std::endl;
-    return std::max(handle->timeout - consummed_ms, 0);
-}
-
 static int _pdo_cassandra_stmt_execute(pdo_cassandra_stmt *statement, pdo_stmt_t *stmt, pdo_cassandra_db_handle *handle,
                                        const std::string &query, boost::posix_time::ptime start_time,
                                        int retry = PHP_PDO_CASSANDRA_MAX_RETRY) {
@@ -135,21 +108,21 @@ static int _pdo_cassandra_stmt_execute(pdo_cassandra_stmt *statement, pdo_stmt_t
     std::cout << "In execute" << std::endl;
     try {
         if (!handle->transport->isOpen()) {
-            if ((tl = get_time_left(handle, start_time)) < 0)
+            if ((tl = get_time_left_on_handle(handle, start_time)) < 0)
                 return 0;
             std::cout << "Connect timeout: " << tl << std::endl;
             handle->socket->setConnTimeout(tl);
             handle->transport->open();
         }
         statement->result.reset(new CqlResult);
-        if ((tl = get_time_left(handle, start_time)) >= 0) {
+        if ((tl = get_time_left_on_handle(handle, start_time)) >= 0) {
             std::cout << "Send timeout: " << tl << std::endl;
             handle->socket->setSendTimeout(tl);
             handle->client->execute_cql3_query(*statement->result.get(), query,
                                                (handle->compression ? Compression::GZIP : Compression::NONE),
                                                handle->consistency);
             statement->has_iterator = 0;
-            if ((tl = get_time_left(handle, start_time)) < 0)
+            if ((tl = get_time_left_on_handle(handle, start_time)) < 0)
                 return 0;
             std::cout << "Recv timeout: " << tl << std::endl;
             handle->socket->setRecvTimeout(tl);

@@ -1,4 +1,5 @@
 /*
+ *  Copyright 2013 France Telecom
  *  Copyright 2011 DataStax
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +14,8 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  */
+
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 #include "php_pdo_cassandra.hpp"
 #include "php_pdo_cassandra_int.hpp"
@@ -239,11 +242,28 @@ static void php_cassandra_handle_auth(pdo_dbh_t *dbh, pdo_cassandra_db_handle *H
     if (!retry)                                 \
         message;                                \
     else                                        \
-        initialize_connection(H, dbh, retry - 1)
+        initialize_connection(H, dbh, start_time, retry - 1)
 
-static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh, int retry = PHP_PDO_CASSANDRA_MAX_RETRY)
+int get_time_left_on_handle(pdo_cassandra_db_handle *handle, const boost::posix_time::ptime &start_time)
 {
+    int consummed_ms = boost::posix_time::time_duration(boost::posix_time::microsec_clock::universal_time() - start_time).total_milliseconds();
+    if (!handle->timeout)
+        return 0;
+    return handle->timeout - consummed_ms;
+}
+
+static void initialize_connection(pdo_cassandra_db_handle *H, pdo_dbh_t *dbh,
+                                  boost::posix_time::ptime start_time,
+                                  int retry = PHP_PDO_CASSANDRA_MAX_RETRY)
+{
+    int tl;
     try {
+        if ((tl = get_time_left_on_handle(H, start_time)) < 0)
+            pdo_cassandra_error_exception(dbh, PDO_CASSANDRA_TIMED_OUT, "%s", "Connection could not be established in the imparted time");
+        H->socket->setConnTimeout(tl);
+        H->socket->setSendTimeout(tl);
+        H->socket->setRecvTimeout(tl);
+
         H->transport->open();
         php_cassandra_handle_auth (dbh, H);
         if ( ! H->active_keyspace.empty() ) {
@@ -298,6 +318,8 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
     dbh->driver_data = H;
 
     if (driver_options) {
+        std::cout << "Options set" << pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_TIMEOUT), 0 TSRMLS_CC) << std::endl;
+        H->timeout = pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_TIMEOUT), 0 TSRMLS_CC);
         if (pdo_attr_lval(driver_options, static_cast <pdo_attribute_type>(PDO_CASSANDRA_ATTR_THRIFT_DEBUG), 0 TSRMLS_CC)) {
             // Convert thift messages to php warnings
             pdo_cassandra_toggle_thrift_debug(1);
@@ -321,10 +343,7 @@ static int pdo_cassandra_handle_factory(pdo_dbh_t *dbh, zval *driver_options TSR
         pdo_cassandra_handle_close(dbh TSRMLS_CC);
         return 0;
     }
-    H->socket->setConnTimeout(H->timeout);
-    H->socket->setSendTimeout(H->timeout);
-    H->socket->setRecvTimeout(H->timeout);
-    initialize_connection(H, dbh);
+    initialize_connection(H, dbh, boost::posix_time::microsec_clock::universal_time());
     return 0;
 }
 /* }}} */
@@ -540,7 +559,7 @@ static int pdo_cassandra_handle_quote(pdo_dbh_t *dbh, const char *unquoted, int 
 static int pdo_cassandra_handle_close(pdo_dbh_t *dbh TSRMLS_DC)
 {
     pdo_cassandra_db_handle *H = static_cast <pdo_cassandra_db_handle *>(dbh->driver_data);
-
+    std::cout << "Closing module" << std::endl;
     if (H) {
         pdo_cassandra_einfo *einfo = &H->einfo;
 
@@ -616,6 +635,7 @@ static int pdo_cassandra_handle_set_attribute(pdo_dbh_t *dbh, long attr, zval *v
         break;
 
         case PDO_CASSANDRA_TIMEOUT:
+            std::cout << "cassandra_timeout" << std::endl;
             convert_to_long(val);
             H->timeout = Z_LVAL_P(val);
         break;
