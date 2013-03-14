@@ -18,7 +18,7 @@
 # define _PHP_PDO_CASSANDRA_H_
 
 #define PHP_PDO_CASSANDRA_EXTNAME "pdo_cassandra"
-#define PHP_PDO_CASSANDRA_EXTVER "@PACKAGE_VERSION@"
+#define PHP_PDO_CASSANDRA_EXTVER "0.4.0"
 
 /* Nb of times the driver will execute the query before dropping it */
 #define PHP_PDO_CASSANDRA_MAX_RETRY 3
