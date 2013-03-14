@@ -193,7 +193,6 @@ void pdo_cassandra_set_active_keyspace(pdo_cassandra_db_handle *H, const std::st
 void pdo_cassandra_set_active_columnfamily(pdo_cassandra_db_handle *H, const std::string &query TSRMLS_DC);
 std::string pdo_cassandra_get_first_sub_pattern(const std::string &subject, const std::string &pattern TSRMLS_DC);
 
-class boost::posix_time::ptime;
 int get_time_left_on_handle(pdo_cassandra_db_handle *handle, const boost::posix_time::ptime &start_time);
 
 #endif /* _PHP_PDO_CASSANDRA_PRIVATE_H_ */
