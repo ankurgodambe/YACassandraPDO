@@ -5,7 +5,7 @@ Pretty much very experimental PDO driver for Cassandra CQL.
 This repository is a fork of: https://code.google.com/a/apache-extras.org/p/cassandra-pdo/
 We cloned it on GitHub because the original project seems dead.
 
-This version is developped for CQL3 target, we do not provide support for other versions of CQL.
+This version is developped for CQL3 target, we do not provide support for former versions of CQL.
 
 We need some testers, so if you find BUGS or inconsistencies, feel free to report them.
 
@@ -19,7 +19,7 @@ We need some testers, so if you find BUGS or inconsistencies, feel free to repor
 # Branches
 
 - 'master' branch is the driver derived from the datastax version.
-- 'retry' branch has been modified according to our needs. The main difference with the master version is that, in case of a connection or request failure we repeat the process untill we reach a maximun retry or a success occurs
+- 'retry' branch has been modified according to our needs. The only difference with the master version is that, in case of a connection or request failure we repeat the process untill we reach the maximum retry attempts or the request finishes in success.
 
 # Dependencies
 
@@ -58,8 +58,7 @@ Before make test:
     $ cp tests/config.inc-dist tests/config.inc
     $ $EDITOR tests/config.inc
 
-This is to prevent accidentally dropping keyspaces that might in use.
-
+This is to prevent accidental keyspaces dropping that are in use.
 
 # DSN
 
@@ -67,7 +66,7 @@ The DSN format is as follows:
 
   - "cassandra:host=127.0.0.1;port=9160"
 
-Multiple hosts can be specified using the following format:
+Multiple hosts can be specified as follow:
 
   - "cassandra:host=127.0.0.1;port=9160,host=localhost;port=9160"
 
@@ -75,11 +74,11 @@ Multiple hosts can be specified using the following format:
 # Prepared statements
 
 CQL doesn't support prepared statements so PDO emulation layer is used for this. Notice that quoting of the
-identifiers is simple 'addslashes' call on the data and isn't necessarily as safe as prepared statements.
+identifiers is a simple escaping method call on the data.
 
-It is also important to specify the types of the bound parameters as (string) "1" might get convert to a
-string value internally even though integer might be more appropriated.
-
+It is mandatory to specify the right types of parameters
+$stmt->bindValue('1', PDP::PARAM_STR) will result in a failure with cassandra 1.2.2
+$stmt->bindValue('1', PDP::PARAM_INT) will be ok
 
 # Transactions
 
@@ -89,6 +88,7 @@ Transactions are not supported and calling PDO::beginTransaction will result in 
 # Contributing
 
 Pull requests containing fixes and/or additional tests are highly appreciated.
+
 
 # Handling large integers
 
@@ -128,17 +128,17 @@ Note that by default PDO will silently ignore the error, unless error mode is se
     <tr>
         <td>PDO::CASSANDRA_ATTR_CONN_TIMEOUT</td>
         <td>integer</td>
-        <td>Connection timeout</td>
+        <td>Connection timeout (Deprecated, see PDO::CASSANDRA_TIMEOUT)</td>
     </tr>
     <tr>
         <td>PDO::CASSANDRA_ATTR_RECV_TIMEOUT</td>
         <td>integer</td>
-        <td>Receive timeout</td>
+        <td>Receive timeout (Deprecated, see PDO::CASSANDRA_TIMEOUT)</td>
     </tr>
     <tr>
         <td>PDO::CASSANDRA_ATTR_SEND_TIMEOUT</td>
         <td>integer</td>
-        <td>Send timeout</td>
+        <td>Send timeout (Deprecated, see PDO::CASSANDRA_TIMEOUT) </td>
     </tr>
     <tr>
         <td>PDO::CASSANDRA_ATTR_COMPRESSION</td>
@@ -155,6 +155,11 @@ Note that by default PDO will silently ignore the error, unless error mode is se
         <td>boolean</td>
         <td>Preserves values as they come from Cassandra</td>
     </tr>
+    <tr>
+        <td>PDO::CASSANDRA_TIMEOUT</td>
+        <td>int</td>
+        <td>Global timeout for a request (includes connection, send, recv and retries) (in ms)</td>
+    </tr>
 </table>
 
 ## The constructor honours the following options
@@ -163,8 +168,9 @@ These options can be passed in the fourth argument for PDO constructor
 
 <table>
     <tr>
-        <td>PDO_ATTR_TIMEOUT</td>
-        <td>Connection timeout value</td>
+        <td>PDO::CASSANDRA_TIMEOUT</td>
+        <td>int</td>
+        <td>Global timeout for a request (includes connection, send, recv and retries) (in ms)</td>
     </tr>
     <tr>
         <td>PDO::CASSANDRA_ATTR_THRIFT_DEBUG</td>
