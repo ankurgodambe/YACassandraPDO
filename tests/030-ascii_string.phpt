@@ -23,9 +23,10 @@ function inject($db, $keys) {
 };
 
 // Regular test
- $chains  = array('I am an ascii chain',
-		  '^^ \\',
-		  'Good\'Morning\'\'England!!');
+$chains  = array('four',
+                 'I am an ascii chain',
+                 '^^ \\',
+                 'Good\'Morning\'\'England!!');
 
 
 foreach($chains as $chain) {
@@ -37,6 +38,7 @@ pdo_cassandra_done($db, $keyspace);
 ?>
 
 --EXPECT--
+string(4) "four"
 string(19) "I am an ascii chain"
 string(4) "^^ \"
 string(23) "Good'Morning''England!!"
